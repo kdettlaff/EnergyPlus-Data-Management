@@ -13,3 +13,4 @@ venv/
 Generated_Data*
 !Generated_Data.gitignore
 
+/.vs/EnergyPlus-Data-Management/FileContentIndex
