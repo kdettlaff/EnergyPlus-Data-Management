@@ -55,9 +55,11 @@ def generate_and_upload_variable(conn_information, simulation_settings, filepath
     if not already_uploaded(timeseriesdata_information, simulation_settings, buildingid, variable): # DEBUG: changed already_updated function, need to fix
         
         # Simulate Variable
+        print("Simulating Variable: " + variable + '\n')
         timeseriesdata_csv_filepath, eiofilepath = simulate_variable(simulation_settings, filepaths, variable)
         
         # Upload Variable
+        print("Uploading Variable to TimeSeriesData Table: " + variable + '\n')
         upload_variable_timeseriesdata(conn_information, simulation_settings, filepaths, timeseriesdata_csv_filepath, buildingid, variable)
         
         if simulation_settings["keepfile"] == 'none': shutil.rmtree(filepaths["sim_results_folderpath"])
@@ -91,7 +93,9 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
     
     if not check_simulation_status(filepaths) == 'Uploaded':
         
-        buildingid = upload_to_buildingids(conn_information, filepaths) # BUG: This is returning buildingid = 1 when it should be greater than 1
+        print("Simulating Building: " + os.path.basename(filepaths["sim_results_folderpath"]) + '\n')
+        buildingid = upload_to_buildingids(conn_information, filepaths) # BUG: This is returning buildingid = 1 when it should be greater than 1. 
+        print("Adding to BuildingIDs: " + str(buildingid) + '\n')
         
         for variable in variable_list:
             
@@ -103,12 +107,15 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
             
     if simulation_settings["keepfile"] in ["all", "processed"]:
         
+        print("Processing Time Series Data\n")
         processed_timeseriesdata_pickle_filepath = Process_TimeSeriesData(simulation_settings, variable_list, filepaths) # A datetime is formatted incorrectly somewhere
+        print("Processing Eio File\n")
         Eio_OutputFile_Dict, Eio_OutputFile_Dict_Filepath = Process_Eio_OutputFile(simulation_settings, filepaths, eiofilepath)
         
     if simulation_settings["keepfile"] == "processed":
         
         # Delete all except the pickle files
+        print("Removing Unprocessed Files\n")
         for filename in os.listdir(filepaths["sim_results_folderpath"]):
             if not filename.endswith('.pickle'):
                 filepath = os.path.join(filepaths["sim_results_folderpath"], filename)
@@ -201,6 +208,10 @@ variable_list = ['Facility Total HVAC Electric Demand Power']
 
 # Empty Time Series Data
 table_exists, table_empty = check_table_exists(conn_information, "public", "timeseriesdata")
+if not table_empty: empty_table(conn_information, "public", "timeseriesdata")
+
+# Empty BuildingIds Table
+table_exists, table_empty = check_table_exists(conn_information, "public", "buildingids")
 if not table_empty: empty_table(conn_information, "public", "timeseriesdata")
 
 automated_data_generation(conn_information, simulation_settings, filepaths, variable_list, sim_information_filepath)     

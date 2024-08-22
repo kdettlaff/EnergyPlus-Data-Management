@@ -239,25 +239,25 @@ def check_sim_uploaded_to_buildingids(csv_filepath, results_folderpath):
 
 def upload_model_information(model_information, building_category, conn_information): 
     """
-    Inserts building information into the `buildingids` table and returns the auto-incremented building ID
+    Inserts building information into the `buildingids` table and returns the auto-incremented building ID.
 
     Args:
-        model_information (dict): infomration aquired by parsing simulation name. 
-        building_category (str)
+        model_information (dict): Information acquired by parsing simulation name. 
+        building_category (str): The category of the building.
         conn_information (str): The connection string or information required to connect to the PostgreSQL database.
 
     Returns:
-    buildingid (int)
-    
+        buildingid (int): The ID of the inserted building.
     """
 
-    # SQL query template for inserting data
+    # SQL query template for inserting data with RETURNING to get the auto-incremented building ID
     insert_query = """
     INSERT INTO buildingids (
         buildingcategory, buildingtype, buildingprototype, buildingconfiguration, buildingstandard, 
         buildingstandardyear, buildinglocation, buildingclimatezone, 
         buildingheatingtype, buildingfoundationtype
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    RETURNING buildingid
     """
 
     # Prepare data for insertion, replacing missing fields with 'NA'
@@ -274,16 +274,18 @@ def upload_model_information(model_information, building_category, conn_informat
         model_information.get('FoundationType', 'NA')
     )
     
-    conn = psycopg2.connect(conn_information)
-    cursor = conn.cursor()
-    cursor.execute(insert_query, data)
-    conn.commit()
-    cursor.close()
-    conn.close()
-        
-    # Retrieve the last inserted ID (buildingid)
-    buildingid = cursor.lastrowid + 1
-    return buildingid
+    try:
+        # Establish connection and execute the query
+        with psycopg2.connect(conn_information) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(insert_query, data)
+                buildingid = cursor.fetchone()[0]  # Fetch the returned building ID
+
+        return buildingid  # Return the inserted building ID
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
         
 # =============================================================================
 # Upload a single building to BuildingIds Table
@@ -331,12 +333,15 @@ def upload_to_buildingids(conn_information, filepaths):
         model_information = parse_name_manufactures(os.path.basename(results_folderpath))
         buildingid = upload_model_information(model_information, 'Manufactured', conn_information)
     
+    # Update Simulation_Information CSV
     updated_row_split = lines[row_number].split(',')
     updated_row = str(buildingid) + ',' + updated_row_split[1] + ',' + updated_row_split[2] + ',' + updated_row_split[3] + ',' + updated_row_split[4]
     lines[row_number] = updated_row
     
     with open(csv_filepath, 'w') as file:
         file.writelines(lines)
+
+    # BUG: This function isn't actually updating the CSV file. Stepping through the code, everything works as it should, and updated_row and row_number are correct. 
     
     return buildingid
 
