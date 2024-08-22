@@ -1,0 +1,15 @@
+ # Ignore Python bytecode files
+__pycache__/
+*.pyc
+
+# Ignore virtual environments
+venv/
+.env/
+
+# Ignore log files
+*.log
+
+# Ignore everything in a specific folder but keep the folder
+Generated_Data*
+!Generated_Data.gitignore
+
