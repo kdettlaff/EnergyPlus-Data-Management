@@ -195,8 +195,10 @@ def update_last_datetime(timeseriesdata_information, new_datetime, buildingid, v
 # Upload Time Series Data for One Variable - NEW
 # =============================================================================
 
-def upload_variable_timeseriesdata(conn_information, simulation_settings, filepaths, timeseriesdata_csv_filepath, buildingid, variable):
-
+def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_csv_filepath, buildingid, variable, simulation_settings=None, data=None,):
+    
+    # Can Provide the Dataframe directly or the CSV File Path
+    
     timeseriesdata_information = filepaths["timeseriesdata_information"]    
     
     # Prepare Query

@@ -1,6 +1,9 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\Automated_DataGeneration",
+    "\\Database_DataRetreival",
+    "\\Database_DataUploader"
   ],
   "PreviewInSolutionExplorer": false
 }

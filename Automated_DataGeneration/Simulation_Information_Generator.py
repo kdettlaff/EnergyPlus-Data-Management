@@ -230,6 +230,29 @@ def Generate_Simulation_Information(Data_FolderPath, Simulation_Results_FolderPa
     return Simulation_Information_Filepath
 
 # =============================================================================
+# Remove Broken IDF's 
+# =============================================================================
+
+def remove_broken_idfs(simulation_information_csv_filepath):
+    
+    with open(simulation_information_csv_filepath, 'r') as file:
+        lines = file.readlines()
+    
+    filtered_lines = []
+    for line in lines:
+        idf_filename = os.path.basename(line.split(',')[1])
+        # Check conditions and append matching lines to filtered_lines
+        if (idf_filename.startswith("MS") or idf_filename.startswith("SS") or
+            "heatedbsmt" in idf_filename or "slab" in idf_filename or
+            "officeLarge" in idf_filename):
+            print("Removing: " + idf_filename + '\n')
+        else:
+            filtered_lines.append(line)
+            
+    with open(simulation_information_csv_filepath, 'w') as file:
+        file.writelines(filtered_lines)
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -239,3 +262,4 @@ Automated_DataGeneration_filepath = os.path.dirname(__file__)
 Generated_Data_folderpath = os.path.abspath(os.path.join(Automated_DataGeneration_filepath, '..', 'Generated_Data'))
 
 Simulation_Information_Filepath = Generate_Simulation_Information(Data_FolderPath, Generated_Data_folderpath)
+remove_broken_idfs(Simulation_Information_Filepath)

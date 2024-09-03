@@ -44,6 +44,48 @@ def check_simulation_status(filepaths):
     return status
 
 # =============================================================================
+# Update Simulation Information CSV
+# =============================================================================
+def update_simulation_information(filepaths, field, newvalue):
+    """
+    Updates a specific field in the Simulation_Information.csv file.
+
+    Args:
+        filepaths (dict): A dictionary containing file paths including 'sim_information_filepath' and 'sim_results_folderpath'.
+        field (str): The field (column) to update. Possible values are 'BuildingID', 'IDF Filepath', 'Weather Filepath', 'Completed Simulation Folderpath', 'Simulation Status'.
+        newvalue (str): The new value to set in the specified field.
+
+    Returns:
+        None
+    """
+
+    # Mapping of field names to their column indices
+    field_to_index = {
+        'BuildingID': 0,
+        'IDF Filepath': 1,
+        'Weather Filepath': 2,
+        'Completed Simulation Folderpath': 3,
+        'Simulation Status': 4
+    }
+    
+    field_index = field_to_index[field]
+
+    # Read the file contents
+    with open(filepaths["sim_information_filepath"], 'r') as file:
+        lines = file.readlines()
+
+    # Update the specific field for the matching row
+    for i in range(len(lines)):
+        line_fields = lines[i].strip().split(',')
+        if filepaths["sim_results_folderpath"] == line_fields[3]:
+            line_fields[field_index] = newvalue
+            lines[i] = ','.join(line_fields) + '\n'
+
+    # Write the updated content back to the file
+    with open(filepaths["sim_information_filepath"], 'w') as file:
+        file.writelines(lines)
+
+# =============================================================================
 # Generate and Upload One Variable
 # =============================================================================
 
@@ -76,7 +118,6 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
     edited_idf_filepath = make_edited_idf(simulation_settings, filepaths)
     filepaths["idf_filepath"] = edited_idf_filepath
 
-
     # Check if BuildingIds Table already created. If not, create Table
     table_exists, table_empty = check_table_exists(conn_information, "public", "buildingids")
     if not table_exists: create_buildingids_table(conn_information)
@@ -85,13 +126,14 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
     table_exists, table_empty = check_table_exists(conn_information, "public", "timeseriesdata")
     if not table_exists: create_timeseriesdata_table(conn_information)
     
-    # Check if TimeSeriesData Table already created. If not, create Table
+    # Check if EioTableData Table already created. If not, create Table
     table_exists, table_empty = check_table_exists(conn_information, "public", "eiotabledata")
     if not table_exists: create_eiotabledata_table(conn_information)
     
-    # Check if Eio
-    
     if not check_simulation_status(filepaths) == 'Uploaded':
+        
+        # Update Simulation_Information.csv
+        update_simulation_information(filepaths, 'Simulation Status', 'Incomplete')
         
         print("Simulating Building: " + os.path.basename(filepaths["sim_results_folderpath"]) + '\n')
         buildingid = upload_to_buildingids(conn_information, filepaths) # BUG: This is returning buildingid = 1 when it should be greater than 1. 
@@ -102,6 +144,9 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
             # Facility Total HVAC Demand power didn't get uploaded
             # Time series data information got written to empty
             timeseriesdata_csv_filepath, eiofilepath = generate_and_upload_variable(conn_information, simulation_settings, filepaths, buildingid, variable)    
+        
+        # Update Simulation_Information.csv
+        update_simulation_information(filepaths, 'Simulation Status', 'Complete')
             
     # Organize Output Files
             
@@ -212,7 +257,7 @@ if not table_empty: empty_table(conn_information, "public", "timeseriesdata")
 
 # Empty BuildingIds Table
 table_exists, table_empty = check_table_exists(conn_information, "public", "buildingids")
-if not table_empty: empty_table(conn_information, "public", "timeseriesdata")
+if not table_empty: empty_table(conn_information, "public", "buildingids")
 
 automated_data_generation(conn_information, simulation_settings, filepaths, variable_list, sim_information_filepath)     
 
@@ -227,5 +272,6 @@ automated_data_generation(conn_information, simulation_settings, filepaths, vari
 # To DO
 # =============================================================================
 
+# customize simulation_information csv creator code, remove broken simulations
 # customize server initializer code
 # Add to the checks system to save time in the case that a simulation is interrupted     
