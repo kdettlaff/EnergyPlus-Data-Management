@@ -7,13 +7,14 @@ Created on Thurs 20240718
 """
 
 # =============================================================================
-# Import Required Modules
+# Import Required Modules - Reviewed
 # =============================================================================
 
 # External Modules
 import sys
 import os
 import glob
+from time import process_time
 import numpy as np
 import pandas as pd
 import scipy.io
@@ -24,21 +25,25 @@ import datetime
 import pickle
 
 #Internal Module
-from Automated_DataGeneration.EP_DataGenerator import *
-from Database_DataUploader.Database_Creator import *
-from Database_DataUploader.BuildingTimeSeriesData_Uploader import *
-from Database_DataUploader.BuildingIds_DataUploader import *
+from EP_DataGenerator import *
+from EP_DataAggregator import * 
+from EP_DataRetrieval import *
+from Database_Creator import * 
+from BuildingIds_DataUploader import *
+from BuildingTimeSeriesData_Uploader import *
+from EioTableData_DataUploader import * 
 
 # =============================================================================
 # Check Simulation Status
 # =============================================================================
-def check_simulation_status(filepaths):
+def check_simulation_status(sim_results_folderpath):
     
-    with open(filepaths["sim_information_filepath"], 'r') as file:
+    sim_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'Simulation_Information.csv')
+    with open(sim_information_filepath, 'r') as file:
         lines = file.readlines()
     
     for line in lines:
-        if filepaths["sim_results_folderpath"] == line.split(',')[3]:
+        if sim_results_folderpath == line.split(',')[3]:
             status = line.split(',')[4] 
     
     return status
@@ -46,7 +51,7 @@ def check_simulation_status(filepaths):
 # =============================================================================
 # Update Simulation Information CSV
 # =============================================================================
-def update_simulation_information(filepaths, field, newvalue):
+def update_simulation_information(sim_results_folderpath, field, newvalue):
     """
     Updates a specific field in the Simulation_Information.csv file.
 
@@ -58,6 +63,8 @@ def update_simulation_information(filepaths, field, newvalue):
     Returns:
         None
     """
+    
+    sim_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'Simulation_Information.csv')
 
     # Mapping of field names to their column indices
     field_to_index = {
@@ -71,38 +78,38 @@ def update_simulation_information(filepaths, field, newvalue):
     field_index = field_to_index[field]
 
     # Read the file contents
-    with open(filepaths["sim_information_filepath"], 'r') as file:
+    with open(sim_information_filepath, 'r') as file:
         lines = file.readlines()
 
     # Update the specific field for the matching row
     for i in range(len(lines)):
         line_fields = lines[i].strip().split(',')
-        if filepaths["sim_results_folderpath"] == line_fields[3]:
+        if sim_results_folderpath == line_fields[3]:
             line_fields[field_index] = newvalue
             lines[i] = ','.join(line_fields) + '\n'
 
     # Write the updated content back to the file
-    with open(filepaths["sim_information_filepath"], 'w') as file:
+    with open(sim_information_filepath, 'w') as file:
         file.writelines(lines)
 
 # =============================================================================
-# Generate and Upload One Variable
+# Generate and Upload One Variable - Reviewed
 # =============================================================================
 
-def generate_and_upload_variable(conn_information, simulation_settings, filepaths, buildingid, variable):
+def generate_and_upload_variable(conn_information, simulation_settings, buildingid, idf_filepath, weather_filepath, sim_results_folderpath, variablename):
     
-    timeseriesdata_information = filepaths["timeseriesdata_information"] 
-    simulation_information = filepaths["sim_information_filepath"]
+    timeseriesdata_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')
+    simulation_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'Simulation_Information.csv')
     
-    if not already_uploaded(timeseriesdata_information, simulation_settings, buildingid, variable): # DEBUG: changed already_updated function, need to fix
+    if not already_uploaded(timeseriesdata_information_filepath, simulation_settings, buildingid, variablename): 
         
         # Simulate Variable
-        print("Simulating Variable: " + variable + '\n')
-        timeseriesdata_csv_filepath, eiofilepath = simulate_variable(simulation_settings, filepaths, variable)
+        print("Simulating Variable: " + variablename + '\n')
+        timeseriesdata_csv_filepath, eiofilepath = simulate_variable(simulation_settings, idf_filepath, weather_filepath, sim_results_folderpath, variablename)
         
         # Upload Variable
-        print("Uploading Variable to TimeSeriesData Table: " + variable + '\n')
-        upload_variable_timeseriesdata(conn_information, simulation_settings, filepaths, timeseriesdata_csv_filepath, buildingid, variable)
+        print("Uploading Variable to TimeSeriesData Table: " + variablename + '\n')
+        upload_variable_timeseriesdata(conn_information, buildingid, variablename, simulation_settings, timeseriesdata_csv_filepath)
         
         if simulation_settings["keepfile"] == 'none': shutil.rmtree(filepaths["sim_results_folderpath"])
     
@@ -112,11 +119,10 @@ def generate_and_upload_variable(conn_information, simulation_settings, filepath
 # Generate and Upload One Building 
 # =============================================================================
             
-def generate_and_upload_building(conn_information, simulation_settings, filepaths, variable_list):  
+def generate_and_upload_building(conn_information, simulation_settings, sim_results_folderpath, idf_filepath, weather_filepath, variable_list):  
     
     # Load Simulation Settings into IDF file
-    edited_idf_filepath = make_edited_idf(simulation_settings, filepaths)
-    filepaths["idf_filepath"] = edited_idf_filepath
+    edited_idf_filepath = make_edited_idf(simulation_settings, sim_results_folderpath, idf_filepath)
 
     # Check if BuildingIds Table already created. If not, create Table
     table_exists, table_empty = check_table_exists(conn_information, "public", "buildingids")
@@ -130,56 +136,33 @@ def generate_and_upload_building(conn_information, simulation_settings, filepath
     table_exists, table_empty = check_table_exists(conn_information, "public", "eiotabledata")
     if not table_exists: create_eiotabledata_table(conn_information)
     
-    if not check_simulation_status(filepaths) == 'Uploaded':
+    if not check_simulation_status(sim_results_folderpath) == 'Uploaded':
         
         # Update Simulation_Information.csv
-        update_simulation_information(filepaths, 'Simulation Status', 'Incomplete')
+        update_simulation_information(sim_results_folderpath, 'Simulation Status', 'Incomplete')
         
         print("Simulating Building: " + os.path.basename(filepaths["sim_results_folderpath"]) + '\n')
-        buildingid = upload_to_buildingids(conn_information, filepaths) # BUG: This is returning buildingid = 1 when it should be greater than 1. 
+        buildingid = upload_to_buildingids(conn_information, sim_results_folderpath) 
         print("Adding to BuildingIDs: " + str(buildingid) + '\n')
         
-        for variable in variable_list:
+        for variablename in variable_list:
             
-            # Facility Total HVAC Demand power didn't get uploaded
-            # Time series data information got written to empty
-            timeseriesdata_csv_filepath, eiofilepath = generate_and_upload_variable(conn_information, simulation_settings, filepaths, buildingid, variable)    
+            timeseriesdata_csv_filepath, eiofilepath = generate_and_upload_variable(conn_information, simulation_settings, buildingid, edited_idf_filepath, weather_filepath, sim_results_folderpath, variablename) 
         
         # Update Simulation_Information.csv
-        update_simulation_information(filepaths, 'Simulation Status', 'Complete')
+        update_simulation_information(sim_results_folderpath, 'Simulation Status', 'Complete')
             
-    # Organize Output Files
-            
-    if simulation_settings["keepfile"] in ["all", "processed"]:
-        
-        print("Processing Time Series Data\n")
-        processed_timeseriesdata_pickle_filepath = Process_TimeSeriesData(simulation_settings, variable_list, filepaths) # A datetime is formatted incorrectly somewhere
-        print("Processing Eio File\n")
-        Eio_OutputFile_Dict, Eio_OutputFile_Dict_Filepath = Process_Eio_OutputFile(simulation_settings, filepaths, eiofilepath)
-        
-    if simulation_settings["keepfile"] == "processed":
-        
-        # Delete all except the pickle files
-        print("Removing Unprocessed Files\n")
-        for filename in os.listdir(filepaths["sim_results_folderpath"]):
-            if not filename.endswith('.pickle'):
-                filepath = os.path.join(filepaths["sim_results_folderpath"], filename)
-                os.remove(filepath)
-                  
-    # Make Folder structures
-    timeseriesdata_subfolder = os.path.join(filepaths["sim_results_folderpath"], 'Time Series Data')
-    os.makedirs(timeseriesdata_subfolder, exist_ok=True)
-    outputfiles_subfolder = os.path.join(filepaths["sim_results_folderpath"], 'Output Files')
-    os.makedirs(outputfiles_subfolder, exist_ok=True)
-    processed_data_subfolder = os.path.join(filepaths["sim_results_folderpath"], 'Processed Data')
-    os.makedirs(processed_data_subfolder, exist_ok=True)
-        
-    for filename in os.listdir(filepaths["sim_results_folderpath"]):
-        filepath = os.path.join(filepaths["sim_results_folderpath"], filename)
-        if os.path.isfile(filepath):
-            if filename.endswith('.csv'): shutil.move(filepath, os.path.join(timeseriesdata_subfolder, filename))
-            elif filename.endswith('.pickle'): shutil.move(filepath, os.path.join(processed_data_subfolder, filename))
-            else: shutil.move(filepath, os.path.join(outputfiles_subfolder, filename))  
+    # Process Data
+    if simulation_settings["keepfiles"] in ["Processed", "All"]:
+        Process_TimeSeriesData(simulation_settings, sim_results_folderpath)
+        Process_Eio_OutputFile(simulation_settings, sim_results_folderpath) 
+    if simulation_settings["keepfiles"] == "Processed":
+        for filename in os.path.listdir(os.path.join(sim_results_folderpath), 'TimeSeriesData'):
+            filepath = os.path.join(sim_results_folderpath, 'TimeSeriesData', filename)
+            os.remove(filepath)
+        for filename in os.path.listdir(os.path.join(sim_results_folderpath), 'OutputFiles'):
+            filepath = os.path.join(sim_results_folderpath, 'OutputFiles', filename)
+            os.remove(filepath)        
 
 # =============================================================================
 # Generate and Upload Multiple Buildings
@@ -202,14 +185,7 @@ def automated_data_generation(conn_information, simulation_settings, filepaths, 
         weather_filepath = line.split(',')[2]
         sim_results_folderpath = line.split(',')[3]
         
-        filepaths = {
-            "idf_filepath": idf_filepath,
-            "weather_filepath": weather_filepath,
-            "sim_results_folderpath": sim_results_folderpath,
-            "sim_information_filepath": sim_information_csv_filepath,
-            "timeseriesdata_information": timeseriesdata_csv_filepath}
-        
-        generate_and_upload_building(conn_information, simulation_settings, filepaths, variable_list) # BUG: For second building, still uploading buildingid = 1
+        generate_and_upload_building(conn_information, simulation_settings, sim_results_folderpath, idf_filepath, weather_filepath, variable_list) 
 
 # =============================================================================
 # Input Dictionaries Used

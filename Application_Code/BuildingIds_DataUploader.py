@@ -208,7 +208,7 @@ def parse_name_manufactures(results_folderpath): # Naming Convention: Configurat
 # =============================================================================
 # Check Building already uploaded to BuildingIDs table for particular simulation
 # =============================================================================
-def check_sim_uploaded_to_buildingids(csv_filepath, results_folderpath):
+def check_sim_uploaded_to_buildingids(results_folderpath):
     """
     Checks whether a simulation corresponding to the given results folder path has been uploaded to the `buildingids` table.
 
@@ -223,7 +223,9 @@ def check_sim_uploaded_to_buildingids(csv_filepath, results_folderpath):
 
     already_uploaded = 0
     
-    with open(csv_filepath, 'r') as file:
+    sim_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'Simulation_Information.csv')
+    
+    with open(sim_information_filepath, 'r') as file:
         lines = file.readlines()
     
     for line in lines:
@@ -291,7 +293,7 @@ def upload_model_information(model_information, building_category, conn_informat
 # Upload a single building to BuildingIds Table
 # =============================================================================       
 
-def upload_to_buildingids(conn_information, filepaths): 
+def upload_to_buildingids(conn_information, sim_results_folderpath): 
     """
     Uploads building information to the database and updates the corresponding building ID in the CSV file.
 
@@ -311,26 +313,25 @@ def upload_to_buildingids(conn_information, filepaths):
     None
     """
     
-    csv_filepath = filepaths["sim_information_filepath"]
-    results_folderpath = filepaths["sim_results_folderpath"]
+    sim_information_filepath = os.path.join(os.path.basename(__file__), '..', 'Generated_Textfiles', 'Simulation_Information.csv')
     
-    with open(csv_filepath, 'r') as file:
+    with open(sim_information_filepath, 'r') as file:
         lines = file.readlines()
     
     for i, line in enumerate(lines):
-        if results_folderpath == line.split(',')[3]:
+        if sim_results_folderpath == line.split(',')[3]:
             idf_filepath = line.split(',')[1]
             row_number = i
             break  
         
-    if os.path.basename(results_folderpath).startswith('ASHRAE') or results_folderpath.startswith('IECC'):
-        model_information = parse_name_commercial(idf_filepath, results_folderpath)
+    if os.path.basename(sim_results_folderpath).startswith('ASHRAE') or sim_results_folderpath.startswith('IECC'):
+        model_information = parse_name_commercial(idf_filepath, sim_results_folderpath)
         buildingid = upload_model_information(model_information, 'Commercial', conn_information)
-    elif os.path.basename(results_folderpath).startswith('MF') or results_folderpath.startswith('SF'):
-        model_information = parse_name_residential(os.path.basename(results_folderpath))
+    elif os.path.basename(sim_results_folderpath).startswith('MF') or sim_results_folderpath.startswith('SF'):
+        model_information = parse_name_residential(os.path.basename(sim_results_folderpath))
         buildingid = upload_model_information(model_information, 'Residential', conn_information)
     else:
-        model_information = parse_name_manufactures(os.path.basename(results_folderpath))
+        model_information = parse_name_manufactures(os.path.basename(sim_results_folderpath))
         buildingid = upload_model_information(model_information, 'Manufactured', conn_information)
     
     # Update Simulation_Information CSV
@@ -338,10 +339,8 @@ def upload_to_buildingids(conn_information, filepaths):
     updated_row = str(buildingid) + ',' + updated_row_split[1] + ',' + updated_row_split[2] + ',' + updated_row_split[3] + ',' + updated_row_split[4]
     lines[row_number] = updated_row
     
-    with open(csv_filepath, 'w') as file:
+    with open(sim_information_filepath, 'w') as file:
         file.writelines(lines)
-
-    # BUG: This function isn't actually updating the CSV file. Stepping through the code, everything works as it should, and updated_row and row_number are correct. 
     
     return buildingid
 

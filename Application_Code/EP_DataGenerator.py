@@ -6,6 +6,8 @@ Created on Thurs 20240718
 
 """
 
+# Reviewed
+
 # =============================================================================
 # Import Required Modules
 # =============================================================================
@@ -24,7 +26,7 @@ import pickle
 from datetime import datetime as dt, timedelta
 
 # =============================================================================
-# Format Datetime Correctly
+# Format Datetime Correctly 
 # =============================================================================
 
 def format_datetime(simulation_year, datetime_str):
@@ -72,20 +74,20 @@ def format_datetime(simulation_year, datetime_str):
 # Make Edited IDF File
 # =============================================================================
 
-def make_edited_idf(simulation_settings, filepaths):
+def make_edited_idf(simulation_settings, sim_results_folderpath, idf_filepath):
     
     # Copying IDF to Temporary Folder
-    temp_folderpath = os.path.abspath(os.path.join(filepaths["sim_results_folderpath"], '..', 'Temporary_Folder')) #DEBUG Sim results folderpath is incorrect
+    temp_folderpath = os.path.abspath(os.path.join(sim_results_folderpath, '..', 'Temporary_Folder')) #DEBUG Sim results folderpath is incorrect
     if not os.path.exists(temp_folderpath): os.mkdir(temp_folderpath)
-    temp_idf_filepath = os.path.join(temp_folderpath, os.path.basename(filepaths["idf_filepath"]))
-    shutil.copy(filepaths["idf_filepath"], temp_folderpath)
+    temp_idf_filepath = os.path.join(temp_folderpath, os.path.basename(idf_filepath))
+    shutil.copy(idf_filepath, temp_folderpath)
     
     # Loading Temp IDF File
     temp_idf = op.Epm.load(temp_idf_filepath)
     
     # Editing RunPeriod
     temp_idf_runperiod = temp_idf.RunPeriod.one()
-    temp_idf_runperiod['begin_day_of_month'] = simulation_settings["sim_start_datetime"].day # DEBUG: datetime is a string not a datetime obj, need to fix
+    temp_idf_runperiod['begin_day_of_month'] = simulation_settings["sim_start_datetime"].day 
     temp_idf_runperiod['begin_month'] = simulation_settings["sim_start_datetime"].month
     temp_idf_runperiod['end_day_of_month'] = simulation_settings["sim_end_datetime"].day
     temp_idf_runperiod['end_month'] = simulation_settings["sim_end_datetime"].month
@@ -114,10 +116,17 @@ def make_edited_idf(simulation_settings, filepaths):
 # Simulate Variable 
 # =============================================================================
 
-def simulate_variable(simulation_settings, filepaths, variable): # DEBUG: Changed header, will need to update everywhere the function in used. 
+def simulate_variable(simulation_settings, idf_filepath, weather_filepath, sim_results_folderpath, variablename): # DEBUG: Changed header, will need to update everywhere the function in used. 
     
     """
     Simulate a variable using the given IDF and weather files, and save the output variable to a CSV file.
+    
+    Parameters:
+    sim_results_folderpath (str): The folder path where the simulation results are stored. Has subfolders:
+        - 'TimeSeriesData' for time series data in CSV format.
+        - 'ProcessedData' for processed data in pickle format.
+        - 'OutputFiles' for additional output files. 
+        - 'Temporary_Folder' for temporary files
 
     This function performs the following steps:
     1. Loads the IDF file and retrieves the Output:Variable object.
@@ -130,33 +139,43 @@ def simulate_variable(simulation_settings, filepaths, variable): # DEBUG: Change
     
     """
     
+    # Create Folder structure for Simulation Results, if it does not exist
+    if not os.path.exists(sim_results_folderpath): os.makedirs(sim_results_folderpath)
+    if not os.path.exists(os.path.join(sim_results_folderpath, 'TimeSeriesData')): os.makedirs(os.path.join(sim_results_folderpath, 'TimeSeriesData'))
+    if not os.path.exists(os.path.join(sim_results_folderpath, 'OutputFiles')): os.makedirs(os.path.join(sim_results_folderpath, 'OutputFiles'))
+    if not os.path.exists(os.path.join(sim_results_folderpath, 'ProcessedData')): os.makedirs(os.path.join(sim_results_folderpath, 'ProcessedData'))
+    if not os.path.exists(os.path.join(sim_results_folderpath, 'Temporary_Folder')): os.makedirs(os.path.join(sim_results_folderpath, 'Temporary_Folder'))
+    
     # Getting Output Variable Queryset from IDF File
-    Edited_IDFFile = op.Epm.load(filepaths["idf_filepath"])
+    Edited_IDFFile = op.Epm.load(idf_filepath)
     OutputVariable_QuerySet = Edited_IDFFile.Output_Variable.one() # DEBUG we are getting Queryset contains no value, probably because we ignored the Special IDF Stuff
     
     # Updating OutputVariable_QuerySet in Special IDF File
     OutputVariable_QuerySet['key_value'] = '*'
     OutputVariable_QuerySet['reporting_frequency'] = simulation_settings["sim_output_variable_reporting_frequency"]
-    OutputVariable_QuerySet['variable_name'] = variable
+    OutputVariable_QuerySet['variable_name'] = variablename
     
     # Saving Edited IDF File in Temporary Folder
-    Edited_IDFFile_Path = os.path.abspath(os.path.join(filepaths["idf_filepath"], '..', 'Edited_IDFFile.idf'))
+    Edited_IDFFile_Path = os.path.abspath(os.path.join(idf_filepath, '..', 'Edited_IDFFile.idf'))
     Edited_IDFFile.save(Edited_IDFFile_Path)
     
     # Run Building Simulation to obtain current output variable
-    op.simulate(Edited_IDFFile_Path, filepaths["weather_filepath"], base_dir_path=filepaths["sim_results_folderpath"])
+    op.simulate(Edited_IDFFile_Path, weather_filepath, base_dir_path=sim_results_folderpath)
 
-    # Rename Time Series Data CSV
-    timeseriesdata_csv_filepath = os.path.join(filepaths["sim_results_folderpath"], variable).replace(' ', '_') + ".csv"
-    timeseriesdata_csv_filepath = os.path.abspath(timeseriesdata_csv_filepath)
-    timeseriesdata_source_filepath = os.path.abspath(os.path.join(filepaths["sim_results_folderpath"], "eplusout.csv"))
+    # Organize Output Files
+    timeseriesdata_csv_filepath = os.path.join(sim_results_folderpath, 'TimeSeriesData', variablename).replace(' ', '_') + ".csv"
+    timeseriesdata_source_filepath = os.path.join(sim_results_folderpath, "eplusout.csv")
     shutil.move(timeseriesdata_source_filepath, timeseriesdata_csv_filepath)
+    
+    for filename in os.listdir(sim_results_folderpath):
+        source_filepath = os.path.join(sim_results_folderpath, filename)
+        destination_filepath = os.path.join(sim_results_folderpath, 'OutputFiles', filename)
+        shutil.move(source_filepath, destination_filepath)
     
     # Delete the Edited IDF File
     os.remove(Edited_IDFFile_Path)
     
-     # THIS MAY NOT BE CORRECT - don't remember how EP names the output csv files. 
-    eiofilepath = os.path.join(filepaths["sim_results_folderpath"], 'eplusout.eio')
+    eiofilepath = os.path.join(sim_results_folderpath, 'eplusout.eio')
     
     return timeseriesdata_csv_filepath, eiofilepath
 
@@ -164,7 +183,7 @@ def simulate_variable(simulation_settings, filepaths, variable): # DEBUG: Change
 # Convert and Save Output Variables .csv to.mat in Results Folder
 # =============================================================================    
 
-def Process_TimeSeriesData(simulation_settings, variable_list, filepaths):
+def Process_TimeSeriesData(simulation_settings, sim_results_folderpath):
     """
     Processes output variable time series data from multiple CSV files and saves the processed data into a single dictionary. Pickles the Dictionary.
 
@@ -199,14 +218,11 @@ def Process_TimeSeriesData(simulation_settings, variable_list, filepaths):
     IDF_OutputVariables_DictDF_filepath
     """
     
-    sim_results_folderpath = filepaths["sim_results_folderpath"]
-    
     # Get Filepath of all Time Series Data CSV's
     timeseriesdata_filepaths = []
-    for variablename in variable_list:
-        timeseriesdata_filename = variablename.replace(' ', '_') + '.csv'
-        timeseriesdata_filepath = os.path.join(sim_results_folderpath, timeseriesdata_filename)
-        timeseriesdata_filepaths.append(timeseriesdata_filepath)
+    for filename in os.listdir(os.path.join(sim_results_folderpath, 'TimeSeriesData')):
+        if filename.endswith('.csv'):
+            timeseriesdata_filepaths.append(os.path.join(sim_results_folderpath, 'TimeSeriesData', filename))
     
     # Initializing IDF_OutputVariable_Dict
     IDF_OutputVariable_Dict = {}
@@ -257,7 +273,7 @@ def Process_TimeSeriesData(simulation_settings, variable_list, filepaths):
             textfile.write(ColumnName + "\n")
     
     # Storing Processed Data in Pickle File
-    IDF_OutputVariables_DictDF_filepath = os.path.join(sim_results_folderpath, "IDF_OutputVariables_DictDF.pickle")        
+    IDF_OutputVariables_DictDF_filepath = os.path.join(sim_results_folderpath, 'ProcessedData', "IDF_OutputVariables_DictDF.pickle")        
     with open(IDF_OutputVariables_DictDF_filepath, "wb") as f: pickle.dump(IDF_OutputVariable_Dict, f)
             
     return IDF_OutputVariables_DictDF_filepath
@@ -266,14 +282,16 @@ def Process_TimeSeriesData(simulation_settings, variable_list, filepaths):
 # Process .eio Output File and save in Results Folder
 # ============================================================================= 
 
-def Process_Eio_OutputFile(simulation_settings, filepaths, eio_filepath):
+def Process_Eio_OutputFile(simulation_settings, sim_results_folderpath):
     """
     Processes the contents of an .eio file into a dictionary. Pickles the dictionary. 
 
     Parameters:
-    Eio_FilePath (str): Path to the .eio file to be processed.
-    ProcessedData_FolderPath (str): Path to the folder where the processed data will be saved.
-    IDF_FileYear (str, optional): Year to be used for the datetime conversion. Default is '2013'.
+    sim_results_folderpath (str): The folder path where the simulation results are stored. Has subfolders:
+        - 'TimeSeriesData' for time series data in CSV format.
+        - 'ProcessedData' for processed data in pickle format.
+        - 'OutputFiles' for additional output files. 
+        - 'Temporary_Folder' for temporary files
 
     The function performs the following steps:
     1. Reads the lines from the .eio file.
@@ -299,6 +317,7 @@ def Process_Eio_OutputFile(simulation_settings, filepaths, eio_filepath):
     # Initializing Eio_OutputFile_Dict
     Eio_OutputFile_Dict = {}
     
+    eio_filepath = os.path.join(sim_results_folderpath, 'OutputFiles', 'eplusout.eio')
     
     with open(eio_filepath) as f: Eio_OutputFile_Lines = f.readlines() 
     Eio_OutputFile_Lines = Eio_OutputFile_Lines[1:] # Removing Intro Lines
@@ -391,7 +410,7 @@ def Process_Eio_OutputFile(simulation_settings, filepaths, eio_filepath):
 
             continue
         
-    Eio_OutputFile_Dict_Filepath = os.path.join(filepaths["sim_results_folderpath"],"Eio_OutputFile.pickle")
+    Eio_OutputFile_Dict_Filepath = os.path.join(sim_results_folderpath, 'ProcessedData',"Eio_OutputFile.pickle")
                                                   
     pickle.dump(Eio_OutputFile_Dict, open(Eio_OutputFile_Dict_Filepath, "wb"))
       
@@ -428,7 +447,7 @@ def check_simulation_completed(csv_filepath, simulation_results_folderpath):
 # =============================================================================
 # Update Simulation Infomration CSV - Simulation Has Been Started
 # =============================================================================
-def update_simulation_information(csv_filepath, simulation_results_folderpath, status):
+def update_simulation_information(simulation_results_folderpath, status):
     """
     Updates the status of a simulation in the Simulation_Information CSV
 
@@ -440,8 +459,10 @@ def update_simulation_information(csv_filepath, simulation_results_folderpath, s
     Returns:
         None: The function updates the file in place and does not return any value.
     """
+    
+    simulation_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Simulation_Information.csv')
 
-    with open(csv_filepath, 'r') as file:
+    with open(simulation_information_filepath, 'r') as file:
         lines = file.readlines()
         lines = lines[1:] # Exclude Column Headers
         
@@ -450,136 +471,6 @@ def update_simulation_information(csv_filepath, simulation_results_folderpath, s
             line_split = line.split(',')
             line_split[4] = status 
             
-# =============================================================================
-# Simulate Building - OLD
-# =============================================================================
-
-# This Function is Unused for now 
-#  A revised version of this function will go into the wrapper application           
-
-# def simulate_building(IDF_FilePath, Weather_FilePath, Simulation_Name, IDF_FileYear, Simulation_VariableNames, Sim_Start_Day, Sim_Start_Month, Sim_End_Day, Sim_End_Month, Sim_OutputVariable_ReportingFrequency, Sim_TimeStep, Completed_Simulation_FolderPath):
-#     """
-#     Simulates the energy performance of a building using an IDF and Weather File, Processes the results into a structured format.
-
-#     This function performs the following steps:
-#     1. Creates the necessary folder structure for the simulation results.
-#     2. Copies the provided IDF and weather files to a temporary directory.
-#     3. Loads and edits the IDF file to adjust the simulation parameters.
-#     4. Runs simulations for each variable specified. 
-#     5. Processes time series data and EIO output files, organizing the results in the appropriate folders.
-#     6. Cleans up by deleting the temporary files and folders used during the simulation.
-
-#     Parameters:
-#     -----------
-#     IDF_FilePath : str
-#         The file path to the original IDF file.
-#     Weather_FilePath : str
-#         The file path to the weather file used for the simulation.
-#     Simulation_Name : str
-#         The name to assign to this simulation run.
-#     IDF_FileYear : str
-#         The year associated with the IDF file, used for processing the results.
-#     Simulation_VariableNames : list of str
-#         A list of variables to be simulated, for which results will be generated.
-#     Sim_Start_Day : int
-#         The starting day of the simulation period (1-31).
-#     Sim_Start_Month : int
-#         The starting month of the simulation period (1-12).
-#     Sim_End_Day : int
-#         The ending day of the simulation period (1-31).
-#     Sim_End_Month : int
-#         The ending month of the simulation period (1-12).
-#     Sim_OutputVariable_ReportingFrequency : str
-#         The reporting frequency for the simulation output variables (e.g., "Hourly", "Daily").
-#     Sim_TimeStep : int
-#         The simulation timestep (e.g., 1, 10, 15, 60 minutes).
-#     Completed_Simulation_FolderPath : str
-#         The folder path where the completed simulation files will be stored.
-
-#     Returns: None
-    
-#     """
-    
-#     IDF_FileName = os.path.basename(IDF_FilePath)
-#     Weather_FileName = os.path.basename(Weather_FilePath)
-    
-#     # =============================================================================
-#     # Creating Completed Simulation Folder Structure
-#     # =============================================================================
-#     processedData_folderPath = os.path.join(Completed_Simulation_FolderPath, 'Sim_ProcessedData')
-#     outputFiles_folderPath = os.path.join(Completed_Simulation_FolderPath, 'Sim_OutputFiles')
-
-#     # =============================================================================
-#     # Copying IDF and Weather Files to Temporary Folder
-#     # =============================================================================
-
-#     # Getting Temporary Folder Path
-#     Temporary_FolderPath = os.path.join(Completed_Simulation_FolderPath, 'Temporary_FolderPath')
-    
-#     # Getting Temporary IDF/Weather File Paths
-#     Temporary_IDF_FilePath = os.path.join(Temporary_FolderPath, IDF_FileName)
-#     Temporary_Weather_FilePath = os.path.join(Temporary_FolderPath, Weather_FileName)
-    
-#     shutil.copy(IDF_FilePath, Temporary_IDF_FilePath)
-#     shutil.copy(Weather_FilePath, Temporary_Weather_FilePath)
-    
-#     # =============================================================================
-#     # Editing Current IDF File
-#     # =============================================================================
-    
-#     # Loading Current IDF File
-#     Current_IDFFile = op.Epm.load(Temporary_IDF_FilePath)
-    
-#     # Loading Current IDF File
-#     Current_IDFFile = op.Epm.load(Temporary_IDF_FilePath)
-
-#     # Editing RunPeriod
-#     Current_IDF_RunPeriod = Current_IDFFile.RunPeriod.one()
-#     Current_IDF_RunPeriod['begin_day_of_month'] = Sim_Start_Day
-#     Current_IDF_RunPeriod['begin_month'] = Sim_Start_Month
-#     Current_IDF_RunPeriod['end_day_of_month'] = Sim_End_Day
-#     Current_IDF_RunPeriod['end_month' ]= Sim_End_Month
-
-#     # Editing TimeStep
-#     Current_IDF_TimeStep = Current_IDFFile.TimeStep.one()
-    
-#     # Getting Current Schedule
-#     Current_ScheduleCompact = Current_IDFFile.Schedule_Compact
-#     Current_ScheduleCompact_Records_Dict = Current_ScheduleCompact._records
-    
-#     # Creating Edited IDF File
-#     Edited_IDFFile = Current_IDFFile
-    
-#     # Saving Edited IDF and Weather File in Results Folder
-#     Edited_IDFFile_FilePath = os.path.join(Temporary_FolderPath, Simulation_Name,  'Edited_IDFFile.idf')
-#     Edited_IDFFile.save(Edited_IDFFile_FilePath)
-    
-#     for OutputVariable in Simulation_VariableNames:
-    
-#         simulate_variable(Edited_IDFFile_FilePath, Weather_FilePath, Completed_Simulation_FolderPath, OutputVariable)
-        
-#         # Move and Rename CSV
-#         csv_filename = OutputVariable.replace(' ', '_') + '.csv'
-#         csv_source_filepath = os.path.join(Completed_Simulation_FolderPath, OutputVariable)
-#         csv_destination_filepath = os.path.join(processedData_folderPath, csv_filename)
-#         shutil.move(csv_source_filepath, csv_destination_filepath)
-        
-#     # Processing CSV Files
-#     Process_TimeSeriesData(processedData_folderPath, processedData_folderPath, IDF_FileYear = '2013')
-    
-#     # Processing EIO Files
-#     Eio_FilePath = os.path.join(outputFiles_folderPath,'eplusout.eio')
-#     Process_Eio_OutputFile(Eio_FilePath, processedData_folderPath, IDF_FileYear = '2013')
-    
-#     for filepath in os.listdir(Completed_Simulation_FolderPath):
-        
-#        if os.path.isfile(filepath): 
-            
-#            destination_path = os.path.join(outputFiles_folderPath, os.path.basename(filepath))
-#            shutil.move(filepath, destination_path)
-    
-#     # Delete Temporary Folder 
-#     shutil.rmtree(Temporary_FolderPath)
 
       
         

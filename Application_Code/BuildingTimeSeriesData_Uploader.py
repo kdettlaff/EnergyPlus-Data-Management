@@ -9,6 +9,8 @@ import csv
 
 from datetime import datetime as dt, timedelta
 
+# Reviewed 
+
 # =============================================================================
 # Format Datetime Correctly
 # =============================================================================
@@ -56,7 +58,7 @@ def format_datetime(simulation_year, datetime_str):
 # Get Last Datetime
 # =============================================================================
 
-def get_last_datetime(buildingid, timeseriesdata_information, variablename=None, subvariable_name=None):
+def get_last_datetime(buildingid, variablename=None, subvariable_name=None):
     """
     Retrieves the last datetime entry from a time series data file for a given building ID, 
     and optionally filters by variable name and subvariable name.
@@ -70,8 +72,9 @@ def get_last_datetime(buildingid, timeseriesdata_information, variablename=None,
     Returns:
         str or None: The last datetime entry for the specified filters, or None if no matching entry is found.
     """
-
-    with open(timeseriesdata_information, 'r') as file:
+    
+    timeseriesdata_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')
+    with open(timeseriesdata_information_filepath, 'r') as file:
         lines = file.readlines()
 
     # Filter lines by building ID
@@ -97,11 +100,11 @@ def get_last_datetime(buildingid, timeseriesdata_information, variablename=None,
 # Check if a Particular Row has already been Uploaded
 # =============================================================================
 
-def datetime_already_uploaded(datetime, buildingid, timeseriesdata_information, variablename=None, subvariable_name=None):
+def datetime_already_uploaded(datetime, buildingid, variablename=None, subvariable_name=None):
     
     datetime_already_uploaded = False
     
-    last_datetime = get_last_datetime(buildingid, timeseriesdata_information, variablename, subvariable_name)
+    last_datetime = get_last_datetime(buildingid, variablename, subvariable_name)
     
     if last_datetime is not None:
         if last_datetime >= datetime: datetime_already_uploaded = True
@@ -165,12 +168,12 @@ def already_uploaded(timeseriesdata_information, simulation_settings, buildingid
     return already_uploaded
 
 # =============================================================================
-# Update Time Series Data Information CSV
+# Update TimeSeriesData_Information CSV
 # =============================================================================
-def update_last_datetime(timeseriesdata_information, new_datetime, buildingid, variable, subvariable=None):
+def update_last_datetime(new_datetime, buildingid, variable, subvariable=None):
     
-    # Read the existing file
-    with open(timeseriesdata_information, 'r') as file:
+    timeseriesdata_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')
+    with open(timeseriesdata_information_filepath, 'r') as file:
         lines = file.readlines()
     
     # Find the line to update
@@ -188,18 +191,17 @@ def update_last_datetime(timeseriesdata_information, new_datetime, buildingid, v
         lines[update_line_index] = ','.join(new_line_parts) + '\n'  # Reconstruct the line
     
     # Write the updated lines back to the file
-    with open(timeseriesdata_information, 'w') as file:
+    with open(timeseriesdata_information_filepath, 'w') as file:
         file.writelines(lines)
     
 # =============================================================================
-# Upload Time Series Data for One Variable - NEW
+# Upload Time Series Data for One Variable 
 # =============================================================================
-
-def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_csv_filepath, buildingid, variable, simulation_settings=None, data=None,):
+def upload_variable_timeseriesdata(conn_information, buildingid, variable, simulation_settings=None, timeseriesdata_csv_filepath=None, data=None,):
     
     # Can Provide the Dataframe directly or the CSV File Path
     
-    timeseriesdata_information = filepaths["timeseriesdata_information"]    
+    timeseriesdata_information_filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')   
     
     # Prepare Query
     table_df_columns = ['buildingid', 'datetime', 'timeresolution', 'variablename', 'zonename', 'surfacename', 'systemnodename', 'value']
@@ -210,7 +212,7 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
   
     simulation_year = str(simulation_settings["sim_end_datetime"].year)
     variablename = os.path.basename(timeseriesdata_csv_filepath).replace('.csv', '')
-    data = pd.read_csv(timeseriesdata_csv_filepath)
+    if data == None: data = pd.read_csv(timeseriesdata_csv_filepath)
     
     timeresolution = simulation_settings["sim_timestep"]
     
@@ -233,7 +235,7 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
                             caught_up = True
                             table_tilevalue = row[schedulename]
                             upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                            update_last_datetime(timeseriesdata_information, datetime_value, buildingid, variablename_value, schedulename_value)
+                            update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, schedulename_value)
             
     elif variablename.startswith('Facility') or variablename.startswith('Site'):  
         variablename_value = variablename.replace('_', ' ').strip()
@@ -249,7 +251,7 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
                 columnname = data.columns[1]
                 table_tilevalue = row[columnname]
                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                update_last_datetime(timeseriesdata_information, datetime_value, buildingid, variablename_value)
+                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value)
                 
     elif variablename.startswith('Zone'): 
         variablename_value = variablename.replace('_', ' ').strip()
@@ -267,7 +269,7 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
                                 caught_up = True
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                                update_last_datetime(timeseriesdata_information, datetime_value, buildingid, variablename_value, zonename_value)
+                                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, zonename_value)
                             
 
     elif variablename.startswith('Surface'):
@@ -286,7 +288,7 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
                                 caught_up = True
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                                update_last_datetime(timeseriesdata_information, datetime_value, buildingid, variablename_value, surfacename_value)
+                                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, surfacename_value)
             
     elif variablename.startswith('System_node'):
         variablename_value = variablename.replace('_', ' ').strip()
@@ -304,161 +306,5 @@ def upload_variable_timeseriesdata(conn_information, filepaths, timeseriesdata_c
                                 caught_up = True
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                                update_last_datetime(timeseriesdata_information, datetime_value, buildingid, variablename_value, systemnodename_value)
+                                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, systemnodename_value)
                                 
-# =============================================================================
-# Upload Time Series Data for One Variable - OLD
-# =============================================================================
-
-# def upload_variable_timeseriesdata(conn_information, simulation_settings, filepaths, timeseriesdata_csv_filepath, buildingid, variable):
-    
-#     """
-#     Uploads time series data from a CSV file to a PostgreSQL database
-
-#     Args:
-#         conn_information (str): The connection string or information required to connect to the PostgreSQL database.
-#         csv_filepath (str): The file path to the CSV file containing the time series data.
-#         building_id (str): The ID of the building associated with the data.
-#         timeresolution (str): The time resolution of the data (e.g., hourly, daily).
-#         sim_end_datetime (datetime): The final datetime for the simulation
-
-#     Process:
-#         1. Establishes a connection to the PostgreSQL database using the provided connection information.
-#         2. Reads the CSV file, ignoring the header row.
-#         3. Determines the type of variable being processed based on the CSV file name.
-#         4. For each row of data, it checks if the data has already been uploaded.
-#            - If not, it inserts the data into the `timeseriesdata` table.
-#         5. Commits the transactions and closes the database connection.
-        
-#     Returns:
-#         None
-
-#     Example Usage:
-#         >>> conn_info = "dbname=Building_Models user=postgres password=secret host=localhost"
-#         >>> upload_variable_timeseriesdata(conn_info, 'path/to/data.csv', 'Building_1', 'hourly', 2024)
-
-#     Notes:
-#         - The CSV file is expected to have a 'Date/Time' column and one or more data columns.
-#         - The function enures that the database connection is always closed, even if an exception occurs during processing. 
-        
-# """
-    
-#     # Create Time Series Data Information CSV if it does not already exist
-#     timeseriesdata_information = filepaths["timeseriesdata_information"]
-#     if not os.path.exists(timeseriesdata_information):
-#         with open(timeseriesdata_information, 'w') as file:
-#             file.write('BuildingID,Variable Name,Variable Type,SubVariable Name,Sim Start Datetime,Last Uploaded Datetime\n')
-            
-#     table_df_columns = ['buildingid', 'datetime', 'timeresolution', 'variablename', 'zonename', 'surfacename', 'systemnodename', 'value']
-    
-#     insert_query = sql.SQL("""
-#         INSERT INTO timeseriesdata (buildingid, datetime, timeresolution, variablename, schedulename, zonename, surfacename, systemnodename, value)
-#         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-#     """)
-    
-#     simulation_year = str(simulation_settings["sim_end_datetime"].year)
-    
-#     variablename = os.path.basename(timeseriesdata_csv_filepath).replace('.csv', '')
-#     data = pd.read_csv(timeseriesdata_csv_filepath)
-    
-#     caught_up = False  # Initialize the caught_up variable
-    
-#     conn = psycopg2.connect(conn_information)
-#     cur = conn.cursor()
-
-#     try:
-
-#         if variablename == 'Schedule_Value':
-#             variablename_value = 'Schedule Value'
-#             zonename_value = 'NA'
-#             surfacename_value = 'NA'
-#             systemnodename_value = 'NA'
-#             schedulenames = data.columns.tolist()  
-#             schedulenames.remove('Date/Time')
-            
-#             for schedulename in schedulenames:
-#                 schedulename_value = schedulename.split(':')[0].strip()
-#                 if not variable_already_uploaded(conn_information, simulation_settings, buildingid, variable): # Potential Issue Here
-#                     for _, row in data.iterrows():
-#                         datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-#                         if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, schedulename_value):#DEBUG this could be causing the exception
-#                             caught_up = True
-#                             table_tilevalue = row[schedulename]
-#                             cur.execute(insert_query, (buildingid, datetime_value, simulation_settings["timestep"], variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue))
-#                             conn.commit()
-
-#         elif variablename.startswith('facility') or variablename.startswith('site'):  
-#             variablename_value = variablename.replace('_', ' ').strip()
-#             schedulename_value = 'NA'
-#             zonename_value = 'NA'
-#             surfacename_value = 'NA'
-#             systemnodename_value = 'NA'
-            
-#             if not variable_already_uploaded(buildingid, variablename_value):
-#                 for _, row in data.iterrows():
-#                     datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-#                     if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value):
-#                         caught_up = True
-#                         columnname = data.columns[1]
-#                         table_tilevalue = row[columnname]
-#                         cur.execute(insert_query, (buildingid, datetime_value, simulation_settings["timestep"], variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue))
-#                         conn.commit()
-                
-#         elif variablename.startswith('zone'): 
-#             variablename_value = variablename.replace('_', ' ').strip()
-#             schedulename_value = 'NA'
-#             surfacename_value = 'NA'
-#             systemnodename_value = 'NA'
-            
-#             for _, row in data.iterrows():
-#                 datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-#                 for columnname in data.columns:
-#                     if columnname != 'Date/Time':
-#                         zonename_value = columnname.split(':')[0].strip()
-#                         if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, zonename_value):
-#                             caught_up = True
-#                             table_tilevalue = row[columnname]
-#                             cur.execute(insert_query, (buildingid, datetime_value, simulation_settings["timestep"], variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue))
-#                             conn.commit()
-
-#         elif variablename.startswith('surface'):
-#             variablename_value = variablename.replace('_', ' ').strip()
-#             schedulename_value = 'NA'
-#             zonename_value = 'NA'
-#             systemnodename_value = 'NA'
-            
-#             for _, row in data.iterrows():
-#                 datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-#                 for columnname in data.columns:
-#                     if columnname != 'Date/Time':
-#                         surfacename_value = columnname.split(':')[0].strip()
-#                         if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, surfacename_value):
-#                             caught_up = True
-#                             table_tilevalue = row[columnname]
-#                             cur.execute(insert_query, (buildingid, datetime_value, simulation_settings["timestep"], variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue))
-#                             conn.commit()
-            
-#         elif variablename.startswith('system_node'):
-#             variablename_value = variablename.replace('_', ' ').strip()
-#             schedulename_value = 'NA'
-#             zonename_value = 'NA'
-#             surfacename_value = 'NA'
-            
-#             for _, row in data.iterrows():
-#                 datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-#                 for columnname in data.columns:
-#                     if columnname != 'Date/Time':
-#                         systemnodename_value = columnname.split(':')[0].strip()
-#                         if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, systemnodename_value):
-#                             caught_up = True
-#                             table_tilevalue = row[columnname]
-#                             cur.execute(insert_query, (buildingid, datetime_value, simulation_settings["timestep"], variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue))
-#                             conn.commit()
-                            
-#         cur.close()
-#         conn.close() 
-
-#     except Exception as e:
-        
-#         cur.close()
-#         conn.close()    
