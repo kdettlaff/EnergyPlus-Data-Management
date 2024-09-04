@@ -7,7 +7,7 @@ import dateutil
 from dateutil.parser import isoparse
 import csv
 
-from datetime import datetime as dt, timedelta
+import datetime as dt 
 
 # Reviewed 
 
@@ -45,8 +45,8 @@ def format_datetime(simulation_year, datetime_str):
     if hour == '24':
         # Convert to 00:00:00 of the next day
         original_date_str = f"{simulation_year}-{month}-{day} 00:00:00"
-        date_obj = dt.strptime(original_date_str, '%Y-%m-%d %H:%M:%S')
-        date_obj += timedelta(days=1)
+        date_obj = dt.datetime.strptime(original_date_str, '%Y-%m-%d %H:%M:%S')
+        date_obj += dt.timedelta(days=1)
         formatted_datetime = date_obj.strftime('%Y-%m-%d %H:%M:%S')
     else:
         # Format the datetime normally
@@ -197,7 +197,7 @@ def update_last_datetime(new_datetime, buildingid, variable, subvariable=None):
 # =============================================================================
 # Upload Time Series Data for One Variable 
 # =============================================================================
-def upload_variable_timeseriesdata(conn_information, buildingid, variable, simulation_settings=None, timeseriesdata_csv_filepath=None, data=None,):
+def upload_variable_timeseriesdata(conn_information, buildingid, variablename, simulation_settings=None, timeseriesdata_csv_filepath=None, data=None,):
     
     # Can Provide the Dataframe directly or the CSV File Path
     
@@ -211,8 +211,7 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variable, simul
     """)
   
     simulation_year = str(simulation_settings["sim_end_datetime"].year)
-    variablename = os.path.basename(timeseriesdata_csv_filepath).replace('.csv', '')
-    if data == None: data = pd.read_csv(timeseriesdata_csv_filepath)
+    if data is None: data = pd.read_csv(timeseriesdata_csv_filepath)
     
     timeresolution = simulation_settings["sim_timestep"]
     
@@ -262,7 +261,7 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variable, simul
         for columnname in data.columns:    
                 if columnname != 'Date/Time': 
                     zonename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variable, zonename_value): # Check Zone already uploaded
+                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, zonename_value): # Check Zone already uploaded
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, timeseriesdata_csv_filepath, variablename_value, zonename_value): # Check datetime already uploaded
@@ -281,7 +280,7 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variable, simul
         for columnname in data.columns:
                 if columnname != 'Date/Time':
                     surfacename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variable, surfacename_value): # Check Surface already uploaded
+                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, surfacename_value): # Check Surface already uploaded
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, surfacename_value): # Check datetime already uploaded
@@ -299,7 +298,7 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variable, simul
         for columnname in data.columns:
                 if columnname != 'Date/Time':
                     systemnodename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variable, systemnodename_value): # Check System Node already uploaded
+                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, systemnodename_value): # Check System Node already uploaded
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, systemnodename_value): # Check datetime already uploaded
@@ -308,3 +307,41 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variable, simul
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
                                 update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, systemnodename_value)
                                 
+# =============================================================================
+# Upload Time Series Data from Pickle File
+# =============================================================================
+
+def upload_timeseriesdata_frompickle(conn_information, buildingid, simulation_settings, timeseriesdata_pickle_filepath):
+    
+    with open(timeseriesdata_pickle_filepath, 'rb') as file:
+        timeseriesdata = pickle.load(file)
+        
+    for variable in timeseriesdata.keys():
+        variablename = variable.replace('_', ' ').replace('.csv', '')
+        upload_variable_timeseriesdata(conn_information, buildingid, variablename, simulation_settings=simulation_settings, data=timeseriesdata[variable])    
+        
+# =============================================================================
+# TEST
+# =============================================================================
+
+def test():
+    
+    pickle_filepath = r"D:\Building_Modeling_Code\Results\Processed_BuildingSim_Data\ASHRAE_2013_Albuquerque_ApartmentHighRise\Sim_ProcessedData\IDF_OutputVariables_DictDF.pickle"
+    
+    conn_information = "dbname=Building_Models user=kasey password=OfficeLarge"
+    
+    sim_start_datetime = dt.datetime(2013, 5, 1, 0, 0, 0, 0)
+    sim_end_datetime = dt.datetime(2013, 5, 2, 0, 0, 0, 0)
+    
+    # Simulation settings dictionary
+    simulation_settings = {
+        "sim_start_datetime": sim_start_datetime, # Example start datetime
+        "sim_end_datetime": sim_end_datetime,    # Example end datetime
+        "sim_timestep": 5,                           # Example timestep in minutes
+        "sim_output_variable_reporting_frequency": 'timestep', # Example reporting frequency
+        "keepfile": "all"
+    }
+    
+    upload_timeseriesdata_frompickle(conn_information, 1, simulation_settings, pickle_filepath)
+    
+test()

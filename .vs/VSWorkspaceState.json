@@ -1,9 +1,8 @@
 {
   "ExpandedNodes": [
     "",
-    "\\Automated_DataGeneration",
-    "\\Database_DataRetreival",
-    "\\Database_DataUploader"
+    "\\Application_Code"
   ],
+  "SelectedNode": "\\Application_Code\\EP_DataManager.py",
   "PreviewInSolutionExplorer": false
 }
