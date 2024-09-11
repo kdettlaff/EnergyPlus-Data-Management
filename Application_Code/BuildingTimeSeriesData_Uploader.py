@@ -6,10 +6,20 @@ import pandas as pd
 import dateutil
 from dateutil.parser import isoparse
 import csv
+import time
 
 import datetime as dt 
 
 # Reviewed 
+
+# =============================================================================
+# Format Time
+# ============================================================================
+
+def convert_seconds_to_hhmmss(seconds):
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02}"
 
 # =============================================================================
 # Format Datetime Correctly
@@ -134,7 +144,7 @@ def upload_datetime(conn_information, buildingid, datetime, timeresolution, vari
 # Check if a Particular Building, Variable, or SubVariable has already been Uploaded
 # =============================================================================
 
-def already_uploaded(timeseriesdata_information, simulation_settings, buildingid, variable=None, subvariable=None):
+def already_uploaded(simulation_settings, buildingid, variable=None, subvariable=None):
     """
     Checks if a particular building, variable, or subvariable has already been uploaded by comparing sim end time 
     with existing entries in the time series data file.
@@ -153,19 +163,73 @@ def already_uploaded(timeseriesdata_information, simulation_settings, buildingid
     already_uploaded = False  
     sim_end_datetime = str(simulation_settings["sim_end_datetime"])
     
-    with open(timeseriesdata_information, 'r') as file:
+    filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')
+    
+    with open(filepath, 'r') as file:
         lines = file.readlines()
     
     for line in lines:
         fields = line.split(',')
-        if fields[0] == buildingid:
+        if fields[0] == str(buildingid):
             if variable is None or fields[1] == variable:
-                if subvariable is None or fields[3] == subvariable:
-                    if fields[5] == sim_end_datetime:
+                if subvariable is None or fields[2] == subvariable:
+                    if fields[3] == 'Upload Completed':
+                        print ("Building: " + fields[0] + "Variable: " + fields[2] + "SubVariable: " + fields[3] + "Already Uploaded\n")
                         already_uploaded = True  
                         break  
         
     return already_uploaded
+
+# =============================================================================
+# Update Time Series Data CSV
+# =============================================================================
+def update_timeseriesdata_information_csv(buildingid, variablename, field, new_value, subvariablename=None):
+    
+    if subvariablename is None: subvariablename = 'NA'
+    
+    # Define the path to the CSV file
+    filepath = os.path.join(os.path.dirname(__file__), '..', 'Generated_Textfiles', 'TimeSeriesData_Information.csv')
+    
+    # Read all lines from the CSV file
+    with open(filepath, 'r') as file:
+        lines = file.readlines()
+    
+    # Determine the column index based on the field name
+    if field == 'Variable Name': i = 1
+    elif field == 'Subvariable Name': i = 2
+    elif field == 'Upload Status': i = 3
+    elif field == 'Upload Time': i = 4
+    
+    # Initialize variables
+    new_lines = []
+    line_found = False
+    
+    # Process each line
+    for line in lines:
+        fields = line.strip().split(',')  # Strip and split the line to remove trailing characters
+        if fields[0] == str(buildingid) and fields[1] == variablename and fields[2] == subvariablename:
+            # Update the field value if the buildingid and variablename match
+            fields[i] = new_value
+            line_found = True
+        new_lines.append(','.join(fields))  # Append the updated or original line
+
+    # If no matching line was found, add a new line with placeholders and call the function recursively
+    if not line_found:
+        new_line = f"{buildingid},{variablename},{subvariablename},None,None"
+        new_lines.append(new_line)
+
+        # Write the new line to the CSV
+        with open(filepath, 'w') as file:
+            file.writelines("\n".join(new_lines) + "\n")  # Ensure proper newline formatting
+        
+        # Call the function recursively to now update the newly added line
+        return update_timeseriesdata_information_csv(buildingid, variablename, field, new_value, subvariablename)
+    
+    # Write the updated lines back to the CSV file
+    with open(filepath, 'w') as file:
+        file.writelines("\n".join(new_lines) + "\n")  # Ensure proper newline formatting
+
+    return
 
 # =============================================================================
 # Update TimeSeriesData_Information CSV
@@ -227,14 +291,14 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
             
             for schedulename in schedulenames:
                 schedulename_value = schedulename.split(':')[0].strip()
-                if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename_value, schedulename_value): # Check Schedule already Uploaded
+                if not already_uploaded(simulation_settings, buildingid, variablename_value, schedulename_value): # Check Schedule already Uploaded
                     for _, row in data.iterrows():
                         datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                         if caught_up or not datetime_already_uploaded(datetime_value, buildingid, timeseriesdata_csv_filepath, variablename, schedulename_value): # Check Datetime already uploaded
                             caught_up = True
                             table_tilevalue = row[schedulename]
                             upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                            update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, schedulename_value)
+                            update_last_datetime(datetime_value, buildingid, variablename_value, schedulename_value)
             
     elif variablename.startswith('Facility') or variablename.startswith('Site'):  
         variablename_value = variablename.replace('_', ' ').strip()
@@ -243,14 +307,15 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
         surfacename_value = 'NA'
         systemnodename_value = 'NA'
         
-        for _, row in data.iterrows():
-            datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
-            if caught_up or not datetime_already_uploaded(datetime_value, buildingid, timeseriesdata_csv_filepath, variablename): # Check datetime already uploaded
-                caught_up = True
-                columnname = data.columns[1]
-                table_tilevalue = row[columnname]
-                upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value)
+        if not already_uploaded(simulation_settings, buildingid, variablename):
+            for _, row in data.iterrows():
+                datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
+                if caught_up or not datetime_already_uploaded(datetime_value, buildingid, timeseriesdata_csv_filepath, variablename): # Check datetime already uploaded
+                    caught_up = True
+                    columnname = data.columns[1]
+                    table_tilevalue = row[columnname]
+                    upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
+                    update_last_datetime(datetime_value, buildingid, variablename_value)
                 
     elif variablename.startswith('Zone'): 
         variablename_value = variablename.replace('_', ' ').strip()
@@ -261,14 +326,20 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
         for columnname in data.columns:    
                 if columnname != 'Date/Time': 
                     zonename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, zonename_value): # Check Zone already uploaded
+                    if not already_uploaded(simulation_settings, buildingid, variablename, zonename_value): # Check Zone already uploaded
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Started', zonename_value)
+                        start_time = time.time()
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, timeseriesdata_csv_filepath, variablename_value, zonename_value): # Check datetime already uploaded
                                 caught_up = True
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, zonename_value)
+                                update_last_datetime(datetime_value, buildingid, variablename_value, zonename_value)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Completed', zonename_value)
+                        end_time = time.time()
+                        elapsed_time = convert_seconds_to_hhmmss(end_time - start_time)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Time', elapsed_time, zonename_value)
                             
 
     elif variablename.startswith('Surface'):
@@ -280,14 +351,20 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
         for columnname in data.columns:
                 if columnname != 'Date/Time':
                     surfacename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, surfacename_value): # Check Surface already uploaded
+                    if not already_uploaded(simulation_settings, buildingid, variablename, surfacename_value): # Check Surface already uploaded
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Started', surfacename_value)
+                        start_time = time.time()
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, surfacename_value): # Check datetime already uploaded
                                 caught_up = True
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
-                                update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, surfacename_value)
+                                update_last_datetime(datetime_value, buildingid, variablename_value, surfacename_value)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Completed', surfacename_value)
+                        end_time = time.time()
+                        elapsed_time = convert_seconds_to_hhmmss(end_time - start_time)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Time', elapsed_time, surfacename_value)
             
     elif variablename.startswith('System_node'):
         variablename_value = variablename.replace('_', ' ').strip()
@@ -298,7 +375,9 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
         for columnname in data.columns:
                 if columnname != 'Date/Time':
                     systemnodename_value = columnname.split(':')[0].strip()
-                    if not already_uploaded(timeseriesdata_csv_filepath, simulation_settings, buildingid, variablename, systemnodename_value): # Check System Node already uploaded
+                    if not already_uploaded(simulation_settings, buildingid, variablename, systemnodename_value): # Check System Node already uploaded
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Started', systemnodename_value)
+                        start_time = time.time()
                         for _, row in data.iterrows():
                             datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                             if caught_up or not datetime_already_uploaded(datetime_value, buildingid, variablename_value, systemnodename_value): # Check datetime already uploaded
@@ -306,6 +385,10 @@ def upload_variable_timeseriesdata(conn_information, buildingid, variablename, s
                                 table_tilevalue = row[columnname]
                                 upload_datetime(conn_information, buildingid, datetime_value, timeresolution, variablename_value, schedulename_value, zonename_value, surfacename_value, systemnodename_value, table_tilevalue)
                                 update_last_datetime(timeseriesdata_information_filepath, datetime_value, buildingid, variablename_value, systemnodename_value)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Completed', systemnodename_value)
+                        end_time = time.time()
+                        elapsed_time = convert_seconds_to_hhmmss(end_time - start_time)
+                        update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Time', elapsed_time, systemnodename_value)
                                 
 # =============================================================================
 # Upload Time Series Data from Pickle File
@@ -318,7 +401,17 @@ def upload_timeseriesdata_frompickle(conn_information, buildingid, simulation_se
         
     for variable in timeseriesdata.keys():
         variablename = variable.replace('_', ' ').replace('.csv', '')
-        upload_variable_timeseriesdata(conn_information, buildingid, variablename, simulation_settings=simulation_settings, data=timeseriesdata[variable])    
+        
+        if not already_uploaded(simulation_settings, buildingid, variablename):
+            update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Started')
+            start_time = time.time()
+            upload_variable_timeseriesdata(conn_information, buildingid, variablename, simulation_settings=simulation_settings, data=timeseriesdata[variable]) 
+            update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Started')
+            end_time = time.time()
+            elapsed_time = convert_seconds_to_hhmmss(end_time - start_time)
+            update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Status', 'Upload Completed')
+            update_timeseriesdata_information_csv(buildingid, variablename, 'Upload Time', elapsed_time)
+        else: print("Building: " + str(buildingid) + "Variable: " + variablename + "Already Uploaded\n")
         
 # =============================================================================
 # TEST

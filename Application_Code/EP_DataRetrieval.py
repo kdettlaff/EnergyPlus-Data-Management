@@ -53,6 +53,7 @@ def retrieve_timeseriesdata(conn_information, buildingid=None, startdatetime=Non
     Warning:
     --------
     Lack of filters could cause the query to return a large amount of data, which could cause performance issues. 
+    Need to figure out how much data retreival is too much at once - determined by RAM 
     
     """
 

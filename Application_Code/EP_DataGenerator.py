@@ -282,7 +282,7 @@ def Process_TimeSeriesData(simulation_settings, sim_results_folderpath):
 # Process .eio Output File and save in Results Folder
 # ============================================================================= 
 
-def Process_Eio_OutputFile(simulation_settings, sim_results_folderpath):
+def Process_Eio_OutputFile(simulation_settings, sim_results_folderpath)Ligho:
     """
     Processes the contents of an .eio file into a dictionary. Pickles the dictionary. 
 
