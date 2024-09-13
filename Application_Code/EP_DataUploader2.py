@@ -13,6 +13,8 @@ import dateutil
 from dateutil.parser import isoparse
 import time
 
+import dask.dataframe as dd
+
 # =============================================================================
 # Format Time
 # ============================================================================
@@ -109,16 +111,36 @@ def get_unique_rows(conn_information, tablename, df, conditions):
     # Convert the fetched rows to a DataFrame
     if rows:
         # Assuming the database table has the same columns as the DataFrame
-        existing_df = pd.DataFrame(rows, columns=df.columns)
+        modified_rows = []
+        for row in rows: modified_rows.append(row[1:])
+        existing_df = pd.DataFrame(modified_rows, columns=df.columns)
     else:
         existing_df = pd.DataFrame(columns=df.columns)  # Empty DataFrame if no matches found
+        
+    chunk_size = 10000  # Adjust the size as needed
 
-    # Merge the new DataFrame with the fetched data to find unique rows
-    # 'left_only' will identify rows that exist in 'df' but not in 'existing_df'
-    merged_df = df.merge(existing_df, how='left', on=list(conditions.keys()), indicator=True)
-    new_rows_df = merged_df[merged_df['_merge'] == 'left_only'].drop('_merge', axis=1)
+    # Check if existing_df is empty
+    if existing_df.empty:
+        # If existing_df is empty, return df because all rows are unique
+        unique_rows_df = df
+    else:
+        merged_df = pd.DataFrame()
 
-    return new_rows_df
+        # Loop through the new dataframe in chunks
+        for i in range(0, len(df), chunk_size):
+            df_chunk = df.iloc[i:i + chunk_size]  # Extract a chunk of rows from the new DataFrame
+
+            # Merge the chunk with the entire existing DataFrame to find unique rows
+            merged_chunk = df_chunk.merge(existing_df, how='left', indicator='_merge_status')
+
+            # Append the merged chunk to the final DataFrame
+            merged_df = pd.concat([merged_df, merged_chunk], ignore_index=True)
+
+        # Filter the merged DataFrame to find rows that are only in the new DataFrame (unique rows)
+        unique_rows_df = merged_df[merged_df['_merge_status'] == 'left_only'].drop('_merge_status', axis=1)
+
+    # Return the unique rows DataFrame (either the full df if existing_df is empty, or the filtered one)
+    return unique_rows_df
 
 # =============================================================================
 # Upload Data to Database
@@ -167,7 +189,11 @@ def upload_df_to_db(conn_information, tablename, df):
     cur.close()
     conn.close()
     
-def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
+# =============================================================================
+# Format DF for Time Series Data
+# =============================================================================
+    
+def timeseriesdata_format_df(df, buildingid, variablename, simulation_year, timeresolution):
     """
     Formats time series data into a DataFrame suitable for further processing.
     
@@ -199,7 +225,8 @@ def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
                 datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                 table_cell_value = row[schedulename]
                 new_row = {'buildingid': buildingid, 
-                           'datetime_value': datetime_value, 
+                           'datetime': datetime_value, 
+                           'timeresolution': str(timeresolution),
                            'variablename': variablename_value, 
                            'schedulename': schedulename_value,
                            'zonename': zonename_value,
@@ -220,13 +247,14 @@ def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
             columnname = df.columns[1]  # Assuming data is in the second column
             table_cell_value = row[columnname]
             new_row = {'buildingid': buildingid, 
-                       'datetime_value': datetime_value, 
-                       'variablename': variablename_value, 
-                       'schedulename': schedulename_value,
-                       'zonename': zonename_value,
-                       'surfacename': surfacename_value,
-                       'systemnodename': systemnodename_value,
-                       'value': table_cell_value}
+                           'datetime': datetime_value, 
+                           'timeresolution': str(timeresolution),
+                           'variablename': variablename_value, 
+                           'schedulename': schedulename_value,
+                           'zonename': zonename_value,
+                           'surfacename': surfacename_value,
+                           'systemnodename': systemnodename_value,
+                           'value': table_cell_value}
             rows_list.append(new_row)
             
     elif variablename.startswith('Zone'):
@@ -242,13 +270,14 @@ def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
                     datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                     table_cell_value = row[columnname]
                     new_row = {'buildingid': buildingid, 
-                               'datetime_value': datetime_value, 
-                               'variablename': variablename_value, 
-                               'schedulename': schedulename_value,
-                               'zonename': zonename_value,
-                               'surfacename': surfacename_value,
-                               'systemnodename': systemnodename_value,
-                               'value': table_cell_value}
+                           'datetime': datetime_value, 
+                           'timeresolution': str(timeresolution),
+                           'variablename': variablename_value, 
+                           'schedulename': schedulename_value,
+                           'zonename': zonename_value,
+                           'surfacename': surfacename_value,
+                           'systemnodename': systemnodename_value,
+                           'value': table_cell_value}
                     rows_list.append(new_row)
 
     elif variablename.startswith('Surface'):
@@ -264,13 +293,14 @@ def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
                     datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                     table_cell_value = row[columnname]
                     new_row = {'buildingid': buildingid, 
-                               'datetime_value': datetime_value, 
-                               'variablename': variablename_value, 
-                               'schedulename': schedulename_value,
-                               'zonename': zonename_value,
-                               'surfacename': surfacename_value,
-                               'systemnodename': systemnodename_value,
-                               'value': table_cell_value}
+                           'datetime': datetime_value, 
+                           'timeresolution': str(timeresolution),
+                           'variablename': variablename_value, 
+                           'schedulename': schedulename_value,
+                           'zonename': zonename_value,
+                           'surfacename': surfacename_value,
+                           'systemnodename': systemnodename_value,
+                           'value': table_cell_value}
                     rows_list.append(new_row)
 
     elif variablename.startswith('System_node'):
@@ -286,17 +316,57 @@ def timeseriesdata_format_df(df, buildingid, variablename, simulation_year):
                     datetime_value = format_datetime(simulation_year, row['Date/Time'].strip())
                     table_cell_value = row[columnname]
                     new_row = {'buildingid': buildingid, 
-                               'datetime_value': datetime_value, 
-                               'variablename': variablename_value, 
-                               'schedulename': schedulename_value,
-                               'zonename': zonename_value,
-                               'surfacename': surfacename_value,
-                               'systemnodename': systemnodename_value,
-                               'value': table_cell_value}
+                           'datetime': datetime_value, 
+                           'timeresolution': str(timeresolution),
+                           'variablename': variablename_value, 
+                           'schedulename': schedulename_value,
+                           'zonename': zonename_value,
+                           'surfacename': surfacename_value,
+                           'systemnodename': systemnodename_value,
+                           'value': table_cell_value}
                     rows_list.append(new_row)
 
     # Convert the list of rows into a DataFrame
     new_df = pd.DataFrame(rows_list)
     
     return new_df
-                                
+
+# =============================================================================
+# Upload Building from Pickle File
+# =============================================================================
+
+def upload_pickle(conn_information, buildingid, simulation_year, timeresolution, pickle_filepath):
+    
+    # Load the data from the pickle file
+    with open(pickle_filepath, 'rb') as f:
+        data = pickle.load(f)
+    
+    for key, value in data.items():
+        
+        variablename = key.replace('_', ' ').replace('.csv', '')
+        
+        variable_df = timeseriesdata_format_df(value, buildingid, variablename, simulation_year, timeresolution)
+        
+        # Prevent uploading duplicate data by isolating unique rows. 
+        conditions = {'buildingid': str(buildingid), 'variablename': variablename}
+        unique_rows_df = get_unique_rows(conn_information, 'timeseriesdata', variable_df, conditions)
+
+        upload_df_to_db(conn_information, 'timeseriesdata', unique_rows_df)
+        
+# =============================================================================
+# Test 
+# =============================================================================
+
+pickle_filepath = "D:\Building_Modeling_Code\Results\Processed_BuildingSim_Data\ASHRAE_2013_Albuquerque_ApartmentHighRise\Sim_ProcessedData\IDF_OutputVariables_DictDF.pickle"
+conn_information = "dbname=Building_Models user=kasey password=OfficeLarge"
+simulation_year = '2013'
+buildingid = 1
+timeresolution = 5
+
+start_time = time.time()
+upload_pickle(conn_information, buildingid, simulation_year, timeresolution, pickle_filepath)
+end_time = time.time()
+elapsed_time = start_time - end_time
+print(elapsed_time)
+
+
