@@ -149,12 +149,12 @@ def get_unique_rows(conn_information, tablename, df, conditions):
 def upload_df_to_db(conn_information, tablename, df):
     """
     Upload a Pandas DataFrame to a PostgreSQL database table in bulk.
-    
+
     Args:
     - conn_information (str): Connection information for the PostgreSQL database.
     - tablename (str): Name of the table in the database.
     - df (pd.DataFrame): DataFrame to be uploaded. Column names in the DataFrame must match those in the table.
-    
+
     Returns:
     - None
     """
@@ -165,9 +165,8 @@ def upload_df_to_db(conn_information, tablename, df):
     placeholders = ', '.join(['%s'] * len(columns))  # Create placeholders for values
     
     # SQL INSERT query (dynamically constructed)
-    insert_query = f"INSERT INTO {tablename} ({columns_str}) VALUES {placeholders}"
+    insert_query = f"INSERT INTO {tablename} ({columns_str}) VALUES ({placeholders})"
     
-    # Insert rows into the database in bulk
     # Convert DataFrame to a list of tuples
     rows = [tuple(x) for x in df.to_numpy()]
     
@@ -175,19 +174,19 @@ def upload_df_to_db(conn_information, tablename, df):
     conn = psycopg2.connect(conn_information)
     cur = conn.cursor()
 
-    # Bulk insert using `execute()` with multiple values at once
-    args_str = ','.join(cur.mogrify(f"({placeholders})", row).decode('utf-8') for row in rows)
-    bulk_insert_query = f"INSERT INTO {tablename} ({columns_str}) VALUES {args_str}"
-    
-    # Execute the bulk insert
-    cur.execute(bulk_insert_query)
+    try:
+        # Execute the bulk insert using executemany
+        cur.executemany(insert_query, rows)
 
-    # Commit the transaction to save the changes
-    conn.commit()
-
-    # Step 5: Close the cursor and connection
-    cur.close()
-    conn.close()
+        # Commit the transaction to save the changes
+        conn.commit()
+    except Exception as e:
+        conn.rollback()  # Rollback if there's an error
+        print(f"Error: {e}")
+    finally:
+        # Step 5: Close the cursor and connection
+        cur.close()
+        conn.close()
     
 # =============================================================================
 # Format DF for Time Series Data

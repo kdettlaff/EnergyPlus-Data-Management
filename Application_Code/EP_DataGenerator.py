@@ -419,7 +419,7 @@ def Process_Eio_OutputFile(simulation_settings, sim_results_folderpath)Ligho:
 # =============================================================================
 # Check Simulation Already Completed
 # =============================================================================
-def check_simulation_completed(csv_filepath, simulation_results_folderpath):
+def check_simulation_completed(simulation_results_folderpath):
     """
     Checks if a simulation has been completed based on the information in the Simulation_Information CSV
 
@@ -432,6 +432,8 @@ def check_simulation_completed(csv_filepath, simulation_results_folderpath):
     """
     
     simulation_completed = 0
+    
+    csv_filepath = os.path.join(os.path.dirname(__file__) , '..', 'Generated_Textfiles', 'Simulation_Information.csv')
     
     with open(csv_filepath, 'r') as file:
         lines = file.readlines()
@@ -469,11 +471,5 @@ def update_simulation_information(simulation_results_folderpath, status):
     for line in lines:
         if simulation_results_folderpath == line.split(',')[3]:
             line_split = line.split(',')
-            line_split[4] = status 
-            
-
-      
-        
-
-    
+            line_split[4] = status     
 

@@ -20,99 +20,106 @@ import pandas as pd
 import pickle
 from re import S
 import psycopg2
-
-from Database_DataRetreival.EP_DataRetrieval import *
-
+import copy
 
 # =============================================================================
-# Aggregate one Variable
-# =============================================================================
-
-def aggregate_variable(conn_information, buildingid, variablename, startdatetime, enddatetime, timeresolution, variable, aggregation_type, aggregation_zone_list=None):
-    """
-    Aggregate variable data for a specified time range, building, and variable using different aggregation types.
-
-    Parameters:
-    -----------
-    variablename : (str) The name of the variable to be aggregated.
-    conn_information : (str) Database connection string
-    buildingid : (int) Identifier for the building from which data is to be retrieved.
-    startdatetime : (datetime) Start of the time range for which data is to be retrieved.
-    enddatetime : (datetime) End of the time range for which data is to be retrieved.
-    timeresolution : (int) The time resolution of the data in minutes.
-    variable : (str) The name of the variable for which data is to be retrieved.
-    aggregation_type : (str) The type of aggregation to be performed ('Average', 'Zone Area Weighted Average', 'Zone Volume Weighted Average').
-    aggregation_zone_list : list of lists, optional
-        List of lists, where each sublist contains the zone names to be aggregated together.
-        Example: [['zone1','zone2','zone3'], ['zone4','zone5','zone6']]
-        If None, then all zones are aggregated to a single zone.
-    """
-    
-    # Retrieve data for the specified time range, building, and variable
-    data_df = retrieve_timeseriesdata(conn_information, buildingid, startdatetime, enddatetime, timeresolution, variable)  # Assuming variable is zone-based
-
-    # Handle case when aggregation_zone_list is None (Single-Zone Aggregation)
-    if aggregation_zone_list is None:
-        aggregation_zone_list = [data_df['zonename'].tolist()]
-   
-    # Make aggregation zone name
-    aggregation_zonename = "Aggregation_" + str(len(aggregation_zone_list)) + "Zone"
-    
-    # Initialize list to hold aggregated data
-    aggregated_zone_data = []
-
-    # Perform aggregation based on the specified type
-    if aggregation_type == 'Average':
-        for zone_list in aggregation_zone_list:
-            zone_data = []
-            for zone in zone_list:
-                values = data_df.loc[data_df['zonename'] == zone, ['datetime', 'value']].values
-                if values.size > 0:
-                    # Append tuple of (datetime, value)
-                    for value in values:
-                        zone_data.append((value[0], value[1]))
-            if zone_data:
-                # Calculate average of the float values
-                average = sum(value[1] for value in zone_data) / len(zone_data)
-                aggregated_zone_data.append(average)
-
-    elif aggregation_type == 'Zone Area Weighted Average':
-        area_df = retrieve_eiotabledata(conn_information, buildingid, tablename='tablename', variablename='area')
-        for zone_list in aggregation_zone_list:
-            weighted_sum = 0
-            total_area = 0
-            for zone in zone_list:
-                values = data_df.loc[data_df['zonename'] == zone, ['datetime', 'value']].values
-                area = area_df.loc[area_df['zonename'] == zone, 'floatvalue'].values
-                if values.size > 0 and area.size > 0:
-                    # Calculate weighted sum using the float part of the tuple
-                    for value in values:
-                        weighted_sum += area[0] * value[1]
-                    total_area += area[0]
-            if total_area > 0:
-                aggregated_zone_data.append(weighted_sum / total_area)
-
-    elif aggregation_type == 'Zone Volume Weighted Average':
-        volume_df = retrieve_eiotabledata(conn_information, buildingid, tablename='tablename', variablename='volume')
-        for zone_list in aggregation_zone_list:
-            weighted_sum = 0
-            total_volume = 0
-            for zone in zone_list:
-                values = data_df.loc[data_df['zonename'] == zone, ['datetime', 'value']].values
-                volume = volume_df.loc[volume_df['zonename'] == zone, 'floatvalue'].values
-                if values.size > 0 and volume.size > 0:
-                    # Calculate weighted sum using the float part of the tuple
-                    for value in values:
-                        weighted_sum += volume[0] * value[1]
-                    total_volume += volume[0]
-            if total_volume > 0:
-                aggregated_zone_data.append(weighted_sum / total_volume)
-    
-    # Upload aggregated data to the database
-    
-    
-    
-    
+# Aggregate Building from Pickle 
+# # =============================================================================
         
+def aggregate_building(completed_simulation_folderpath, aggregation_zone_name, aggregation_zone_list, aggregation_type):
  
+    # If Aggregation Folder does not exist, create it
     
+    aggregation_folderpath = os.path.join(completed_simulation_folderpath, 'Sim_Aggregated_Data')
+    if not os.path.exists(aggregation_folderpath): os.makedirs(aggregation_folderpath)
+     
+    # Load the building pickle file
+    pickle_filepath = os.path.join(completed_simulation_folderpath, 'Sim_Processed_Data', 'IDF_OutputVariables_DictDF.pickle')
+    with open(pickle_filepath, "rb") as file: data = pickle.load(file)
+     
+    # Get Associated Areas and Volumes of each Zone
+     
+    # =============================================================================
+    # Initialize Aggregation_DF and Aggregation_DF_Equipment
+    # =============================================================================
+
+    # Creating Equipment List
+    Equipment_List = ['People', 'Lights', 'ElectricEquipment', 'GasEquipment', 'OtherEquipment', 'HotWaterEquipment', 'SteamEquipment']
+
+    # Initializing Aggregation_DF
+    Aggregation_DF = pd.DataFrame()
+
+    # FOR LOOP: For each Variable 
+    for key, value in data:
+        
+        # IF LOOP: For the Variable Name Schedule_Value_
+        if (key == 'Schedule_Value_'): # Create Schedule Columns which are needed
+        
+            # FOR LOOP: For each element in Equipment_List
+            for element in Equipment_List:
+                
+                # Creating Current_EIO_Dict_Key
+                Current_EIO_Dict_Key = element + ' ' + '_Internal_Gains_Nominal.csv'
+                
+                # IF LOOP: To check if Current_EIO_Dict_Key is present in Eio_OutputFile_Dict
+                if (Current_EIO_Dict_Key in list(data.keys())):           
+                
+                    # Creating key1 for column Name
+                    key1 = key + element
+                
+                    # Initializing Aggregation_Dict with None
+                    Aggregation_DF[key1] = None    
+        
+        else: # For all other Columns
+        
+            # Initializing Aggregation_Dict with None
+            Aggregation_DF[key] = None
+
+    # Initializing Aggregation_DF_Equipment
+    Aggregation_DF_Equipment = pd.DataFrame()        
+            
+    # FOR LOOP: For each element in Equipment_List
+    for element in Equipment_List:
+        
+        # Creating Current_EIO_Dict_Key
+        Current_EIO_Dict_Key = element + ' ' + '_Internal_Gains_Nominal.csv'
+        
+        # IF LOOP: To check if Current_EIO_Dict_Key is present in Eio_OutputFile_Dict
+        if (Current_EIO_Dict_Key in list(data.keys())): # Key present in Eio_OutputFile_Dict            
+        
+            # Creating key1 for column Name
+            key1 =  element + '_Level'
+        
+            # Initializing Aggregation_Dict with None
+            Aggregation_DF_Equipment[key1] = None
+
+    # =============================================================================
+    # Initialize Aggregation_Dict 
+    # =============================================================================
+    
+        DateTime_List = data['DateTime_List']
+        
+        Aggregation_Zone_NameStem = 'Aggregation_Zone'
+
+        # Initializing Aggregation_Dict
+        Aggregation_Dict = {'DateTime_List': DateTime_List}
+
+        # Initializing Counter
+        Counter = 0
+
+        # FOR LOOP: For each element in Aggregation_Zone_List
+        for element in aggregation_zone_list:
+        
+            # Incrementing Counter
+            Counter = Counter + 1
+        
+            # Creating Aggregated Zone name 1 : For the Aggregated Time Series
+            Aggregated_Zone_Name_1 = Aggregation_Zone_NameStem + "_" + str(Counter)
+        
+            # Creating Aggregated Zone name 2 : For the Aggregated Equipment 
+            Aggregated_Zone_Name_2 = Aggregation_Zone_NameStem + "_Equipment_" + str(Counter)    
+        
+            # Appending empty Aggregation_DF to Aggregation_Dict
+            Aggregation_Dict[Aggregated_Zone_Name_1] = copy.deepcopy(Aggregation_DF)
+        
+            Aggregation_Dict[Aggregated_Zone_Name_2] = copy.deepcopy(Aggregation_DF_Equipment)
